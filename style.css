@@ -1,22 +1,13 @@
-/* フルスクリーン設定 */
-html, body {
-  margin:0;
-  padding:0;
-  overflow:hidden;
-  width:100%;
-  height:100%;
-  touch-action:none; /* スマホでスクロール防止 */
-  background:black;
+body {
+  margin: 0;
+  overflow: hidden;
+  background: black;
 }
 
-/* videoとcanvasをフルスクリーンに配置 */
 video, canvas {
-  position:absolute;
-  top:0;
-  left:0;
-  width:100%;
-  height:100%;
-  object-fit:cover;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
 }
-
-/* ビームや爆発の見た目調整はcanvasで描画 */
