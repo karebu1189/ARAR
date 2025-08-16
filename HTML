@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Hand Beam AR Game</title>
+<style>
+html, body {
+  margin:0; padding:0; overflow:hidden; width:100%; height:100%;
+  touch-action:none; background:black;
+}
+video, canvas {
+  position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover;
+}
+</style>
+</head>
+<body>
+
+<video id="camera" autoplay playsinline muted></video>
+<canvas id="game"></canvas>
+
+<script type="module">
+import {Hands} from 'https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js';
+import {Camera} from 'https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js';
+
+const video = document.getElementById('camera');
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+// 敵情報
+let enemies = [];
+for(let i=0;i<5;i++){
+  enemies.push({x:Math.random()*canvas.width, y:Math.random()*canvas.height/2+50, radius:30});
+}
+
+// ビーム情報
+let beams = [];
+let explosions = [];
+
+// MediaPipe Hands
+const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+hands.setOptions({maxNumHands:1, minDetectionConfidence:0.7, minTrackingConfidence:0.7});
+
+hands.onResults(results=>{
+  if(results.multiHandLandmarks && results.multiHandLandmarks.length>0){
+    const lm = results.multiHandLandmarks[0];
+    const x = lm[8].x * canvas.width;
+    const y = lm[8].y * canvas.height;
+
+    // 指を曲げたらビーム発射
+    const curl = lm[8].y - lm[6].y;
+    if(curl < -0.02){
+      beams.push({x,y,vx:0,vy:-15, trail:[]});
+    }
+  }
+});
+
+// カメラ起動
+const cam = new Camera(video, {onFrame: async()=>{await hands.send({image:video})}, width:640, height:480});
+cam.start();
+
+// 描画ループ
+function draw(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  // 敵描画
+  ctx.fillStyle='red';
+  enemies.forEach(e=>{
+    ctx.beginPath();
+    ctx.arc(e.x,e.y,e.radius,0,Math.PI*2);
+    ctx.fill();
+  });
+
+  // ビーム描画
+  beams.forEach((b,i)=>{
+    b.y += b.vy;
+
+    // 光の尾(trail)
+    b.trail.push({x:b.x,y:b.y});
+    if(b.trail.length>10) b.trail.shift();
+
+    for(let j=0;j<b.trail.length;j++){
+      const p = b.trail[j];
+      ctx.fillStyle=`rgba(0,255,255,${j/b.trail.length})`;
+      ctx.beginPath();
+      ctx.arc(p.x,p.y,8*(j/b.trail.length+0.3),0,Math.PI*2);
+      ctx.fill();
+    }
+
+    // 衝突判定
+    enemies.forEach((e,j)=>{
+      const dx = b.x - e.x;
+      const dy = b.y - e.y;
+      const dist = Math.sqrt(dx*dx+dy*dy);
+      if(dist < e.radius+10){
+        // 爆発パーティクル追加
+        for(let k=0;k<20;k++){
+          explosions.push({
+            x:e.x, y:e.y,
+            vx:(Math.random()-0.5)*10,
+            vy:(Math.random()-0.5)*10,
+            t:30, r:Math.random()*5+5
+          });
+        }
+        enemies.splice(j,1);
+        beams.splice(i,1);
+      }
+    });
+  });
+
+  // 爆発描画
+  explosions.forEach((ex,i)=>{
+    ctx.fillStyle=`rgba(255,${Math.floor(Math.random()*255)},0,${ex.t/30})`;
+    ctx.beginPath();
+    ctx.arc(ex.x,ex.y,ex.r*(ex.t/30+0.5),0,Math.PI*2);
+    ctx.fill();
+    ex.x += ex.vx; ex.y += ex.vy; ex.t--;
+    if(ex.t<=0) explosions.splice(i,1);
+  });
+
+  requestAnimationFrame(draw);
+}
+
+draw();
+</script>
+</body>
+</html>
