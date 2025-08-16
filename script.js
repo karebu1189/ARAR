@@ -8,6 +8,10 @@ const ctx = canvas.getContext('2d');
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
+// video サイズも canvas に合わせる
+video.width = canvas.width;
+video.height = canvas.height;
+
 // -------------------
 // 敵情報
 // -------------------
@@ -24,13 +28,13 @@ for (let i = 0; i < enemyCount; i++) {
 }
 
 // -------------------
-// ビーム情報
+// ビーム＆爆発情報
 // -------------------
 let beams = [];
 let explosions = [];
 
 // -------------------
-// MediaPipe Hands設定
+// MediaPipe Hands 設定
 // -------------------
 const hands = new Hands({
   locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
@@ -50,9 +54,12 @@ hands.onResults(results => {
     const x = lm[8].x * canvas.width;
     const y = lm[8].y * canvas.height;
 
-    // 指を曲げたらビーム発射
+    // デバッグ用: curl値を表示
     const curl = lm[8].y - lm[6].y;
-    if (curl < -0.02) {
+    // console.log('curl', curl);
+
+    // 指を少し曲げただけでも発射できるように緩和
+    if (curl < 0) {
       beams.push({ x, y, vx: 0, vy: -15, trail: [] });
     }
   }
@@ -74,14 +81,11 @@ cam.start();
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // -------------------
   // 敵描画＆移動
-  // -------------------
   ctx.fillStyle = 'red';
   enemies.forEach(e => {
     e.x += e.vx;
     e.y += e.vy;
-
     if (e.x < e.radius || e.x > canvas.width - e.radius) e.vx *= -1;
     if (e.y < e.radius || e.y > canvas.height / 2) e.vy *= -1;
 
@@ -90,14 +94,12 @@ function draw() {
     ctx.fill();
   });
 
-  // -------------------
-  // ビーム描画＆衝突判定（逆順ループ）
-  // -------------------
+  // ビーム描画＆衝突判定
   for (let i = beams.length - 1; i >= 0; i--) {
     let b = beams[i];
     b.y += b.vy;
 
-    // 光の尾(trail)追加
+    // トレイル追加
     b.trail.push({ x: b.x, y: b.y });
     if (b.trail.length > 30) b.trail.shift();
 
@@ -110,14 +112,13 @@ function draw() {
       ctx.fill();
     }
 
-    // 衝突判定（逆順ループ）
+    // 衝突判定
     for (let j = enemies.length - 1; j >= 0; j--) {
       const e = enemies[j];
       const dx = b.x - e.x;
       const dy = b.y - e.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
       if (dist < e.radius + 10) {
-        // 爆発パーティクル追加
         for (let k = 0; k < 30; k++) {
           explosions.push({
             x: e.x,
@@ -135,9 +136,7 @@ function draw() {
     }
   }
 
-  // -------------------
   // 爆発描画
-  // -------------------
   for (let i = explosions.length - 1; i >= 0; i--) {
     const ex = explosions[i];
     ctx.fillStyle = `rgba(255,${Math.floor(Math.random() * 255)},0,${ex.t / 40})`;
