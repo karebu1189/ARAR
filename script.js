@@ -1,156 +1,41 @@
-import { Hands } from 'https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js';
-import { Camera } from 'https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js';
-
 const video = document.getElementById('camera');
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
+// カメラ映像取得
+navigator.mediaDevices.getUserMedia({ video: true })
+  .then(stream => { video.srcObject = stream; })
+  .catch(err => { console.error("カメラ取得失敗:", err); });
 
-// video サイズも canvas に合わせる
-video.width = canvas.width;
-video.height = canvas.height;
-
-// -------------------
-// 敵情報
-// -------------------
-let enemies = [];
-const enemyCount = 6;
-for (let i = 0; i < enemyCount; i++) {
-  enemies.push({
-    x: Math.random() * canvas.width,
-    y: Math.random() * canvas.height / 2 + 50,
-    radius: 30,
-    vx: (Math.random() - 0.5) * 2,
-    vy: (Math.random() - 0.5) * 1
-  });
+// Canvasサイズをウィンドウに合わせる
+function resizeCanvas() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
 }
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
 
-// -------------------
-// ビーム＆爆発情報
-// -------------------
-let beams = [];
-let explosions = [];
+// ゲーム用のオブジェクト
+let obj = { x: 100, y: 100, size: 50, vx: 3, vy: 2 };
 
-// -------------------
-// MediaPipe Hands 設定
-// -------------------
-const hands = new Hands({
-  locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
-});
-hands.setOptions({
-  maxNumHands: 1,
-  minDetectionConfidence: 0.7,
-  minTrackingConfidence: 0.7
-});
-
-// -------------------
-// 手の検出結果
-// -------------------
-hands.onResults(results => {
-  if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-    const lm = results.multiHandLandmarks[0];
-    const x = lm[8].x * canvas.width;
-    const y = lm[8].y * canvas.height;
-
-    // デバッグ用: curl値を表示
-    const curl = lm[8].y - lm[6].y;
-    // console.log('curl', curl);
-
-    // 指を少し曲げただけでも発射できるように緩和
-    if (curl < 0) {
-      beams.push({ x, y, vx: 0, vy: -15, trail: [] });
-    }
-  }
-});
-
-// -------------------
-// カメラ起動
-// -------------------
-const cam = new Camera(video, {
-  onFrame: async () => { await hands.send({ image: video }); },
-  width: canvas.width,
-  height: canvas.height
-});
-cam.start();
-
-// -------------------
-// 描画ループ
-// -------------------
-function draw() {
+// メインループ
+function gameLoop() {
+  // Canvasクリア
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // 敵描画＆移動
-  ctx.fillStyle = 'red';
-  enemies.forEach(e => {
-    e.x += e.vx;
-    e.y += e.vy;
-    if (e.x < e.radius || e.x > canvas.width - e.radius) e.vx *= -1;
-    if (e.y < e.radius || e.y > canvas.height / 2) e.vy *= -1;
+  // オブジェクト移動
+  obj.x += obj.vx;
+  obj.y += obj.vy;
 
-    ctx.beginPath();
-    ctx.arc(e.x, e.y, e.radius, 0, Math.PI * 2);
-    ctx.fill();
-  });
+  // 画面端で反射
+  if (obj.x < 0 || obj.x > canvas.width - obj.size) obj.vx *= -1;
+  if (obj.y < 0 || obj.y > canvas.height - obj.size) obj.vy *= -1;
 
-  // ビーム描画＆衝突判定
-  for (let i = beams.length - 1; i >= 0; i--) {
-    let b = beams[i];
-    b.y += b.vy;
+  // オブジェクト描画
+  ctx.fillStyle = 'rgba(255,0,0,0.7)';
+  ctx.fillRect(obj.x, obj.y, obj.size, obj.size);
 
-    // トレイル追加
-    b.trail.push({ x: b.x, y: b.y });
-    if (b.trail.length > 30) b.trail.shift();
-
-    // トレイル描画
-    for (let j = 0; j < b.trail.length; j++) {
-      const p = b.trail[j];
-      ctx.fillStyle = `rgba(0,255,255,${j / b.trail.length})`;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 10 * (j / b.trail.length + 0.3), 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // 衝突判定
-    for (let j = enemies.length - 1; j >= 0; j--) {
-      const e = enemies[j];
-      const dx = b.x - e.x;
-      const dy = b.y - e.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < e.radius + 10) {
-        for (let k = 0; k < 30; k++) {
-          explosions.push({
-            x: e.x,
-            y: e.y,
-            vx: (Math.random() - 0.5) * 10,
-            vy: (Math.random() - 0.5) * 10,
-            t: 40,
-            r: Math.random() * 5 + 5
-          });
-        }
-        enemies.splice(j, 1);
-        beams.splice(i, 1);
-        break;
-      }
-    }
-  }
-
-  // 爆発描画
-  for (let i = explosions.length - 1; i >= 0; i--) {
-    const ex = explosions[i];
-    ctx.fillStyle = `rgba(255,${Math.floor(Math.random() * 255)},0,${ex.t / 40})`;
-    ctx.beginPath();
-    ctx.arc(ex.x, ex.y, ex.r * (ex.t / 40 + 0.5), 0, Math.PI * 2);
-    ctx.fill();
-
-    ex.x += ex.vx;
-    ex.y += ex.vy;
-    ex.t--;
-    if (ex.t <= 0) explosions.splice(i, 1);
-  }
-
-  requestAnimationFrame(draw);
+  requestAnimationFrame(gameLoop);
 }
 
-draw();
+gameLoop();
